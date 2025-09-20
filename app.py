@@ -1,35 +1,39 @@
 # ----------------------------
-# app.py - Deepfake Detection with Grad-CAM
+# app.py - Deepfake Detection + Grad-CAM
 # ----------------------------
 import streamlit as st
-import tensorflow as tf
-from tensorflow.keras import layers, models
-from tensorflow.keras.preprocessing import image
 import numpy as np
 from PIL import Image
-import cv2
-import gdown
 import os
-import matplotlib.pyplot as plt
+
+# Check if TensorFlow is available
+try:
+    import tensorflow as tf
+    from tensorflow.keras import layers, models
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
+
+# Check if OpenCV is available
+try:
+    import cv2
+    CV_AVAILABLE = True
+except ImportError:
+    CV_AVAILABLE = False
 
 # ----------------------------
 # Constants
 # ----------------------------
 IMG_SIZE = (128, 128)
 MODEL_PATH = "deepfake_detector.keras"
-GDRIVE_ID = "YOUR_FILE_ID"  # Replace with your Google Drive file ID
-GDRIVE_URL = f"https://drive.google.com/uc?id={GDRIVE_ID}"
 
 # ----------------------------
-# Download model if not exists
-# ----------------------------
-if not os.path.exists(MODEL_PATH):
-    gdown.download(GDRIVE_URL, MODEL_PATH, quiet=False)
-
-# ----------------------------
-# Model definition
+# Model definition (only if TensorFlow is available)
 # ----------------------------
 def build_model(input_shape=(128,128,3)):
+    if not TF_AVAILABLE:
+        return None, None
+    
     inputs = tf.keras.Input(shape=input_shape)
     x = layers.Conv2D(32, (3,3), activation='relu')(inputs)
     x = layers.MaxPooling2D(2,2)(x)
@@ -45,14 +49,23 @@ def build_model(input_shape=(128,128,3)):
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
     return model, last_conv_layer_output
 
-model, last_conv_layer_output = build_model()
-model.load_weights(MODEL_PATH)
-_ = model(tf.random.normal(shape=(1, IMG_SIZE[0], IMG_SIZE[1], 3)))  # Dummy call
+# Initialize model if possible
+model, last_conv_layer_output = None, None
+if TF_AVAILABLE and os.path.exists(MODEL_PATH):
+    try:
+        model, last_conv_layer_output = build_model()
+        model.load_weights(MODEL_PATH)
+        _ = model(tf.random.normal(shape=(1, IMG_SIZE[0], IMG_SIZE[1], 3)))  # Dummy call
+    except Exception as e:
+        st.error(f"Failed to load model: {e}")
 
 # ----------------------------
-# Grad-CAM
+# Grad-CAM (only if TensorFlow is available)
 # ----------------------------
 def make_gradcam_heatmap(img_array, model, last_conv_layer_output):
+    if not TF_AVAILABLE:
+        return None
+    
     grad_model = tf.keras.models.Model(
         inputs=model.inputs,
         outputs=[last_conv_layer_output, model.output]
@@ -72,6 +85,18 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer_output):
 # Streamlit UI
 # ----------------------------
 st.title("🖼️ Deepfake Detection + Grad-CAM")
+
+# Show status of dependencies
+if not TF_AVAILABLE:
+    st.warning("⚠️ TensorFlow not available. ML functionality is disabled.")
+if not CV_AVAILABLE:
+    st.warning("⚠️ OpenCV not available. Grad-CAM visualization is limited.")
+if not os.path.exists(MODEL_PATH):
+    st.warning("⚠️ Pre-trained model not found. Please upload the model file.")
+
+if model is None:
+    st.info("📋 Deepfake detection is currently unavailable. Upload functionality is still working.")
+
 st.write("Upload one or more images to detect Real vs Fake content.")
 
 uploaded_files = st.file_uploader("Choose images", type=['jpg','jpeg','png'], accept_multiple_files=True)
@@ -79,21 +104,41 @@ uploaded_files = st.file_uploader("Choose images", type=['jpg','jpeg','png'], ac
 if uploaded_files:
     for file in uploaded_files:
         img = Image.open(file).convert("RGB")
-        img_array = np.expand_dims(np.array(img.resize(IMG_SIZE))/255.0, axis=0)
+        st.image(img, caption=f"Uploaded: {file.name}", use_column_width=True)
+        
+        if model is not None:
+            img_array = np.expand_dims(np.array(img.resize(IMG_SIZE))/255.0, axis=0)
+            
+            # Prediction
+            pred = model.predict(img_array)
+            label = "Real" if pred[0][0] > 0.5 else "Fake"
+            confidence = pred[0][0] if pred[0][0] > 0.5 else 1 - pred[0][0]
+            st.write(f"**{file.name} → Prediction:** {label} (Confidence: {confidence:.2f})")
 
-        # Prediction
-        pred = model.predict(img_array)
-        label = "Real" if pred[0][0] > 0.5 else "Fake"
-        st.write(f"**{file.name} → Prediction:** {label}")
-
-        # Grad-CAM overlay for Fake
-        if label == "Fake":
-            heatmap = make_gradcam_heatmap(img_array, model, last_conv_layer_output)
-            heatmap_resized = cv2.resize(heatmap, (img.width, img.height))
-            heatmap_colored = cv2.applyColorMap(np.uint8(255*heatmap_resized), cv2.COLORMAP_JET)
-            heatmap_colored = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB)
-            overlayed_img = np.array(img)*0.5 + heatmap_colored*0.5
-            overlayed_img = overlayed_img.astype(np.uint8)
-            st.image(overlayed_img, caption=f"{file.name} → Grad-CAM Overlay", use_column_width=True)
+            # Grad-CAM overlay for Fake
+            if label == "Fake" and CV_AVAILABLE:
+                heatmap = make_gradcam_heatmap(img_array, model, last_conv_layer_output)
+                if heatmap is not None:
+                    heatmap_resized = cv2.resize(heatmap, (img.width, img.height))
+                    heatmap_colored = cv2.applyColorMap(np.uint8(255*heatmap_resized), cv2.COLORMAP_JET)
+                    heatmap_colored = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB)
+                    overlayed_img = np.array(img)*0.5 + heatmap_colored*0.5
+                    overlayed_img = overlayed_img.astype(np.uint8)
+                    st.image(overlayed_img, caption=f"{file.name} → Grad-CAM Overlay", use_column_width=True)
         else:
-            st.image(img, caption=f"{file.name} → Real", use_column_width=True)
+            st.info(f"📸 {file.name} uploaded successfully. ML analysis unavailable without model.")
+
+# ----------------------------
+# Instructions
+# ----------------------------
+st.markdown("---")
+st.markdown("### 🔧 Setup Instructions")
+st.markdown("""
+To enable full functionality:
+1. **Install TensorFlow**: The ML model requires TensorFlow
+2. **Install OpenCV**: For Grad-CAM heatmap visualization
+3. **Model File**: Upload or configure the deepfake_detector.keras model
+""")
+
+if not TF_AVAILABLE or not CV_AVAILABLE:
+    st.code("pip install tensorflow opencv-python", language="bash")
