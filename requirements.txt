@@ -1,6 +1,5 @@
-tensorflow-cpu
-numpy
-matplotlib
+streamlit
+tensorflow
 pillow
 opencv-python-headless
-streamlit
+numpy
