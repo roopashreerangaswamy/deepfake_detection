@@ -28,7 +28,7 @@ def build_model(input_shape=(128,128,3)):
 @st.cache_resource
 def load_trained_model():
     model = build_model((IMG_SIZE[0], IMG_SIZE[1], 3))
-    model.load_weights("/content/drive/MyDrive/model_main.keras")  # adjust path
+    model.load_weights("model_main.keras")  # adjust path
     _ = model(tf.random.normal((1, IMG_SIZE[0], IMG_SIZE[1],3)))  # dummy call
     return model
 
