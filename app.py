@@ -87,16 +87,40 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer_output):
 st.title("🖼️ Deepfake Detection + Grad-CAM")
 
 # Show status of dependencies
-if not TF_AVAILABLE:
-    st.warning("⚠️ TensorFlow not available. ML functionality is disabled.")
-if not CV_AVAILABLE:
-    st.warning("⚠️ OpenCV not available. Grad-CAM visualization is limited.")
-if not os.path.exists(MODEL_PATH):
-    st.warning("⚠️ Pre-trained model not found. Please upload the model file.")
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    if not TF_AVAILABLE:
+        st.warning("⚠️ TensorFlow not available. ML functionality is disabled.")
+    if not CV_AVAILABLE:
+        st.warning("⚠️ OpenCV not available. Grad-CAM visualization is limited.")
+    if not os.path.exists(MODEL_PATH):
+        st.warning("⚠️ Pre-trained model not found.")
+
+with col2:
+    if st.button("🔧 Setup Help"):
+        st.info("See setup instructions below ⬇️")
+
+# Model upload section
+if TF_AVAILABLE and not os.path.exists(MODEL_PATH):
+    st.markdown("### 📁 Upload Pre-trained Model")
+    uploaded_model = st.file_uploader(
+        "Upload your deepfake detection model (.keras format)", 
+        type=['keras', 'h5'], 
+        help="Upload a trained Keras model file for deepfake detection"
+    )
+    
+    if uploaded_model is not None:
+        # Save the uploaded model
+        with open(MODEL_PATH, "wb") as f:
+            f.write(uploaded_model.getbuffer())
+        st.success(f"Model '{uploaded_model.name}' uploaded successfully! Please refresh the page to load it.")
+        st.experimental_rerun()
 
 if model is None:
-    st.info("📋 Deepfake detection is currently unavailable. Upload functionality is still working.")
+    st.info("📋 Deepfake detection is currently unavailable. Upload functionality is still working for image preview.")
 
+st.markdown("### 📷 Image Analysis")
 st.write("Upload one or more images to detect Real vs Fake content.")
 
 uploaded_files = st.file_uploader("Choose images", type=['jpg','jpeg','png'], accept_multiple_files=True)
@@ -133,12 +157,50 @@ if uploaded_files:
 # ----------------------------
 st.markdown("---")
 st.markdown("### 🔧 Setup Instructions")
-st.markdown("""
-To enable full functionality:
-1. **Install TensorFlow**: The ML model requires TensorFlow
-2. **Install OpenCV**: For Grad-CAM heatmap visualization
-3. **Model File**: Upload or configure the deepfake_detector.keras model
-""")
 
-if not TF_AVAILABLE or not CV_AVAILABLE:
-    st.code("pip install tensorflow opencv-python", language="bash")
+if not TF_AVAILABLE or not CV_AVAILABLE or not os.path.exists(MODEL_PATH):
+    st.markdown("**Current Status:**")
+    
+    if TF_AVAILABLE:
+        st.success("✅ TensorFlow is installed")
+    else:
+        st.error("❌ TensorFlow not installed")
+        st.code("pip install tensorflow", language="bash")
+    
+    if CV_AVAILABLE:
+        st.success("✅ OpenCV is installed") 
+    else:
+        st.error("❌ OpenCV not installed")
+        st.code("pip install opencv-python", language="bash")
+        
+    if os.path.exists(MODEL_PATH):
+        st.success("✅ Model file is available")
+    else:
+        st.error("❌ Model file missing")
+        st.markdown("""
+        **To get a pre-trained model:**
+        1. Upload your own `.keras` model file using the uploader above
+        2. Or train your own deepfake detection model
+        3. The model should output a single value (0-1) where >0.5 = Real, <=0.5 = Fake
+        """)
+        
+    st.markdown("---")
+    st.markdown("**For developers:** This app supports any binary classification model trained for deepfake detection with 128x128 RGB input images.")
+else:
+    st.success("🎉 All dependencies are installed and model is loaded! The app is fully functional.")
+
+# About section
+with st.expander("ℹ️ About this Application"):
+    st.markdown("""
+    This is a **Deepfake Detection** application that uses:
+    - **Deep Learning**: CNN-based binary classification 
+    - **Grad-CAM**: Visual explanations showing which parts of the image influenced the decision
+    - **Streamlit**: Web interface for easy image upload and analysis
+    
+    **How it works:**
+    1. Upload an image (JPG, JPEG, or PNG)
+    2. The model predicts if it's Real or Fake
+    3. For images classified as Fake, Grad-CAM highlights suspicious regions
+    
+    **Note**: This is a demo application. For production use, consider additional preprocessing, ensemble methods, and validation techniques.
+    """)
