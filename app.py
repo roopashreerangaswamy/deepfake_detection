@@ -31,17 +31,14 @@ def build_model(input_shape=(128,128,3)):
 @st.cache_resource
 def load_trained_model():
     model = build_model((IMG_SIZE[0], IMG_SIZE[1], 3))
-    model.load_weights("model_main.keras")  # Ensure this file is in your repo or accessible path
-    _ = model(tf.random.normal((1, IMG_SIZE[0], IMG_SIZE[1],3)))  # Dummy call to initialize
+    model.load_weights("model_main.keras")  # Ensure this file is in the repo
+    _ = model(tf.random.normal((1, IMG_SIZE[0], IMG_SIZE[1],3)))  # Dummy call
     return model
-
-model = load_trained_model()
 
 # ----------------------------
 # Grad-CAM Function
 # ----------------------------
 def make_gradcam_heatmap(img_array, model):
-    # Find last Conv2D layer
     last_conv_layer = None
     for layer in reversed(model.layers):
         if isinstance(layer, layers.Conv2D):
@@ -75,6 +72,9 @@ st.title("🔎 Deepfake Image Detection with Grad-CAM")
 uploaded_file = st.file_uploader("Upload an image", type=["jpg","png","jpeg"])
 
 if uploaded_file:
+    # Lazy load the model only when needed
+    model = load_trained_model()
+
     img = Image.open(uploaded_file).convert("RGB")
     st.image(img, caption="Uploaded Image", use_container_width=True)
 
