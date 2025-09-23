@@ -8,7 +8,7 @@ import cv2
 IMG_SIZE = (128, 128)
 
 # ----------------------------
-# Build model
+# Build Model
 # ----------------------------
 def build_model(input_shape=(128,128,3)):
     inputs = tf.keras.Input(shape=input_shape)
@@ -25,19 +25,23 @@ def build_model(input_shape=(128,128,3)):
     model = tf.keras.Model(inputs, outputs)
     return model
 
+# ----------------------------
+# Load Trained Model (cached)
+# ----------------------------
 @st.cache_resource
 def load_trained_model():
     model = build_model((IMG_SIZE[0], IMG_SIZE[1], 3))
-    model.load_weights("model_main.keras")  # adjust path
-    _ = model(tf.random.normal((1, IMG_SIZE[0], IMG_SIZE[1],3)))  # dummy call
+    model.load_weights("model_main.keras")  # Ensure this file is in your repo or accessible path
+    _ = model(tf.random.normal((1, IMG_SIZE[0], IMG_SIZE[1],3)))  # Dummy call to initialize
     return model
 
 model = load_trained_model()
 
 # ----------------------------
-# Grad-CAM
+# Grad-CAM Function
 # ----------------------------
 def make_gradcam_heatmap(img_array, model):
+    # Find last Conv2D layer
     last_conv_layer = None
     for layer in reversed(model.layers):
         if isinstance(layer, layers.Conv2D):
@@ -57,14 +61,15 @@ def make_gradcam_heatmap(img_array, model):
     pooled_grads = tf.reduce_mean(grads, axis=(0,1,2))
     conv_outputs = conv_outputs[0]
 
-    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
-    heatmap = tf.squeeze(heatmap)
-    heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
+    heatmap = tf.reduce_sum(conv_outputs * pooled_grads, axis=-1)
+    heatmap = tf.maximum(heatmap, 0)
+    heatmap /= tf.math.reduce_max(heatmap) + 1e-10
     return heatmap.numpy()
 
 # ----------------------------
 # Streamlit App
 # ----------------------------
+st.set_page_config(page_title="Deepfake Detection", page_icon="🔎")
 st.title("🔎 Deepfake Image Detection with Grad-CAM")
 
 uploaded_file = st.file_uploader("Upload an image", type=["jpg","png","jpeg"])
@@ -73,11 +78,15 @@ if uploaded_file:
     img = Image.open(uploaded_file).convert("RGB")
     st.image(img, caption="Uploaded Image", use_container_width=True)
 
+    # Preprocess
     img_array = np.expand_dims(np.array(img.resize(IMG_SIZE))/255.0, axis=0)
-    pred = model.predict(img_array)[0][0]
-    label = "Real ✅" if pred>0.5 else "Fake ❌"
+
+    # Prediction
+    pred = model.predict(img_array, verbose=0)[0][0]
+    label = "Real ✅" if pred > 0.5 else "Fake ❌"
     st.subheader(f"Prediction: {label}")
 
+    # Grad-CAM overlay only for Fake
     if label.startswith("Fake"):
         heatmap = make_gradcam_heatmap(img_array, model)
         heatmap_resized = cv2.resize(heatmap, (img.width, img.height))
